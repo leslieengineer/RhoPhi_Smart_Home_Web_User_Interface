@@ -5,12 +5,20 @@
 | Field        | Value                                                 |
 | ------------ | ----------------------------------------------------- |
 | Document ID  | WEBUI-ARCH-001                                        |
-| Version      | 1.0.0                                                 |
+| Version      | 1.1.1                                                 |
 | Status       | Active                                                |
-| Last Updated | 2026-02-21                                            |
+| Last Updated | 2026-02-28                                            |
 | Tech Stack   | Vue 3 + TypeScript + Vite + Pinia + Vue Router        |
 | Target Host  | ESP32 AP (192.168.4.1) — embedded via LittleFS/SPIFFS |
 | Relates to   | IMPL-ARCH-001, IMPL-DATA-001, SRS-RHOPHI-001          |
+
+> **⚠️ Phase Roadmap Context — WebUI là giao diện điều khiển tạm thời cho Phase 2**
+>
+> WebUI trên ESP32 AP phục vụ local LAN control trong Phase 2. Phase 3 sẽ thêm **MQTT Gateway** cho internet control (cloud/remote). Firmware architecture được thiết kế sẵn cho transition: REST API endpoints giữ nguyên, chỉ thêm MQTT transport song song.
+>
+> `Phase 1: HTTP/WebUI → Phase 2: +BLE Mesh → Phase 3: +MQTT/Cloud → Phase 4: +App/Panel/OTA`
+>
+> *Ref: [SRS §1.4](../../docs/Spec/SRS_RhoPhi_SmartHome.md#14-development-philosophy) | [Devices.md](../../docs/Mesh/Devices.md)*
 
 ---
 
@@ -159,24 +167,32 @@ App Shell (Header + NavBar + RouterView)
 │  │ RhoPhi_Home      │  │ 2 online      │ │
 │  └─────────────────┘  └───────────────┘ │
 │                                          │
-│  ─── This Device ───────────────────── │
+│  ─── This Device ── RhoPhi Switch 2G ── │
 │  ┌─────────────────────────────────────┐│
-│  │  Relay 1            [  ●  ON  ]     ││ ← Main relay toggle
-│  │  Brightness         [━━━━━━━●  75%] ││ ← Slider
+│  │ Ch0: Đèn phòng khách  [  ● ON  ]   ││ ← ChannelCard (onoff)
+│  └─────────────────────────────────────┘│
+│  ┌─────────────────────────────────────┐│
+│  │ Ch1: Đèn phòng ngủ    [  ○ OFF ]   ││ ← ChannelCard (onoff)
 │  └─────────────────────────────────────┘│
 │                                          │
 │  ─── Mesh Nodes (Quick) ─────────────── │
-│  ● Node A (0x0010)    [  ● ON  ]        │ ← Quick toggle per node
-│  ○ Node B (0x0011)    [OFFLINE]         │
+│  ● Node A (0x0010) 2ch [Ch0●] [Ch1○]   │ ← Quick per-channel toggle
+│  ○ Node B (0x0011)         [OFFLINE]    │
 │  + 1 more...  → [View All]              │
 └─────────────────────────────────────────┘
 │  [Dashboard] [Mesh] [Scenes] [Settings] │ ← Bottom NavBar
 └─────────────────────────────────────────┘
 ```
 
+> **Multi-Channel (v1.1.0):** "This Device" section renders **N ChannelCards** dynamically based on
+> `DeviceState.channels[]`. Single-channel products (Switch 1G) show 1 card; multi-channel products
+> (Switch 2G, Dimmer 2G) show 2+ cards. Mesh quick list shows first channel toggle per node.
+> See [MESH-DEV-001 §10](../../docs/Mesh/Devices.md#10-webui--multi-channel-ui-local-device--remote-mesh-nodes) for full design.
+
 **Components cần:**
 
 - `SystemStatusCard` — WiFi/Mesh connection state
+- `ChannelCard` — **NEW (v1.1.0):** Reusable card rendering per-channel controls (toggle + optional slider) adaptive by `channel.type` (`onoff` → toggle only, `dimmer` → toggle + brightness). Used in Dashboard, MeshView, ScenesView
 - `RelayToggle` — toggle ON/OFF với visual feedback
 - `BrightnessSlider` — slider + giá trị % hiển thị
 - `NodeQuickRow` — row gọn cho quick overview
@@ -194,24 +210,38 @@ App Shell (Header + NavBar + RouterView)
 │  [All ▼]  🔍 Search...        3/4 online│
 ├─────────────────────────────────────────┤
 │  ┌───────────────────────────────────┐  │
-│  │ ● Living Room Light              │  │  ← NodeCard (online)
-│  │   Addr: 0x0010  │ Relay: ●ON     │  │
-│  │   Brightness: ████████░░  80%    │  │
-│  │   [  Toggle  ]  [  Details  ]    │  │
+│  │ ● Living Room  0x0010  SW2G  2ch │  │  ← NodeCard (online, multi-channel)
+│  │                                    │  │
+│  │  ┌── Ch0: Switch 1 ── onoff ──┐  │  │
+│  │  │  ON  ══════════●            │  │  │  ← ChannelCard per channel
+│  │  └────────────────────────────┘  │  │
+│  │  ┌── Ch1: Switch 2 ── onoff ──┐  │  │
+│  │  │  OFF ○══════════            │  │  │
+│  │  └────────────────────────────┘  │  │
+│  │  RSSI: -52 dBm                    │  │
+│  │  [  Details  ]                    │  │
 │  └───────────────────────────────────┘  │
 │  ┌───────────────────────────────────┐  │
-│  │ ● Bedroom Switch                 │  │
-│  │   Addr: 0x0011  │ Relay: ○ OFF   │  │
-│  │   Brightness: N/A                │  │
-│  │   [  Toggle  ]  [  Details  ]    │  │
+│  │ ● Bedroom Dimmer 0x0012 DM1G 1ch│  │  ← NodeCard (dimmer model)
+│  │                                    │  │
+│  │  ┌── Ch0: Dimmer 1 ── dimmer ──┐ │  │
+│  │  │  ON  ══════════●            │  │  │
+│  │  │  Brightness ████████░░  60% │  │  │
+│  │  └────────────────────────────┘  │  │
+│  │  RSSI: -65 dBm                    │  │
+│  │  [  Details  ]                    │  │
 │  └───────────────────────────────────┘  │
 │  ┌───────────────────────────────────┐  │
 │  │ ○ Kitchen Light        [OFFLINE] │  │  ← NodeCard (offline)
-│  │   Addr: 0x0012  │ Last seen: 5m  │  │
+│  │   Addr: 0x0014  │ Last seen: 5m  │  │
 │  │   [  Details  ]                  │  │
 │  └───────────────────────────────────┘  │
 └─────────────────────────────────────────┘
 ```
+
+> **Multi-Channel (v1.1.0):** Each online node card renders **N ChannelCards** from `node.channels[]`.
+> Remote nodes (e.g., Switch 2G = 2 elements) show separate controls per channel. Legacy single-relay
+> nodes auto-normalize to `channels[0]` on the frontend. See [MESH-DEV-001 §10.7](../../docs/Mesh/Devices.md).
 
 **NodeCard — detail view (modal/drawer):**
 
@@ -251,20 +281,24 @@ Node Details: Living Room Light
 ├─────────────────────────────────────────┤
 │  ┌───────────────────────────────────┐  │
 │  │ 🌅 Morning Routine               │  │
-│  │   Relay: ON | Brightness: 80%    │  │
-│  │   Nodes: 3 of 4                  │  │
+│  │   3 nodes · 5 channels           │  │
+│  │   Local:  Ch0 ON · Ch1 ON        │  │
+│  │   0x0010: Ch0 ON 80% · Ch1 OFF   │  │
 │  │   [▶ Activate]  [✏ Edit]  [🗑]   │  │
 │  └───────────────────────────────────┘  │
 │  ┌───────────────────────────────────┐  │
 │  │ 🌙 Night Mode                    │  │
-│  │   Relay: ON | Brightness: 20%    │  │
-│  │   Nodes: all                     │  │
+│  │   2 nodes · 3 channels           │  │
 │  │   [▶ Activate]  [✏ Edit]  [🗑]   │  │
 │  └───────────────────────────────────┘  │
 │                                          │
 │  [+ Create from current state]          │
 └─────────────────────────────────────────┘
 ```
+
+> **Multi-Channel Scenes (v1.1.0):** Scene targets now snapshot **per-channel** state for each node
+> (including local device channels). `SceneTarget.channels[]` replaces the old flat `relay_on/brightness`.
+> See [MESH-DEV-001 §10.8](../../docs/Mesh/Devices.md).
 
 ---
 
@@ -396,12 +430,28 @@ POST /api/device/brightness
      Body:     { "level": 75 }
      Response: { "brightness": 75 }
 
+POST /api/device/channel/:ch/state                              ← NEW (v1.1.0)
+     Body:     { "on": true }
+     Response: Channel object
+
+POST /api/device/channel/:ch/level                              ← NEW (v1.1.0)
+     Body:     { "level": 75 }
+     Response: Channel object
+
 GET  /api/mesh/nodes
-     Response: { nodes: [ { addr, name, online, relay_on, brightness, rssi }, ... ] }
+     Response: { nodes: [ { addr, name, online, channel_count, channels[], rssi }, ... ] }
 
 POST /api/mesh/node/:addr/relay
      Body:     { "state": true }
      Response: { "addr": "0x0010", "relay_on": true }
+
+POST /api/mesh/node/:addr/channel/:ch/state                     ← NEW (v1.1.0)
+     Body:     { "state": true }
+     Response: { "addr": "0x0010", channel object }
+
+POST /api/mesh/node/:addr/channel/:ch/level                     ← NEW (v1.1.0)
+     Body:     { "level": 80 }
+     Response: { "addr": "0x0010", channel object }
 
 POST /api/mesh/node/:addr/name
      Body:     { "name": "Living Room" }
@@ -448,8 +498,10 @@ Firmware push event tới WebUI mỗi khi state thay đổi:
 ```typescript
 // WebSocket message format (JSON)
 type WsMessage =
-  | { type: 'STATE_UPDATE'; payload: DeviceState }
-  | { type: 'NODE_UPDATE'; payload: MeshNode }
+  | { type: 'STATE_UPDATE'; payload: DeviceState }          // DeviceState now has channels[]
+  | { type: 'NODE_UPDATE'; payload: MeshNode }              // MeshNode now has channels[]
+  | { type: 'CHANNEL_UPDATE'; payload: {                    // ← NEW (v1.1.0): fine-grained channel event
+      source: 'local' | 'mesh'; addr?: string; channel: Channel } }
   | { type: 'NODE_OFFLINE'; payload: { addr: string } }
   | { type: 'WIFI_STATUS'; payload: { connected: boolean; ssid: string; ip: string } }
   | { type: 'LOG'; payload: { level: 'INFO' | 'WARN' | 'ERROR'; msg: string; ts: number } }
@@ -472,81 +524,114 @@ type WsMessage =
 
 ```typescript
 // src/stores/device.ts
+// v1.1.0: Multi-channel model — DeviceState.channels[] replaces flat relay_on/brightness
+
 interface DeviceState {
-  relay_on: boolean
-  brightness: number // 0-100
-  scene_id: number
+  product: string       // "RhoPhi Switch 2G"
+  product_id: string    // "SW2G"
   device_name: string
+  channel_count: number
+  channels: Channel[]   // ← NEW: per-channel state
+  scene_id: number
+  // Legacy compat: relay_on?, brightness? (maps to channels[0])
 }
 
 export const useDeviceStore = defineStore('device', () => {
-  const state = ref<DeviceState>({ relay_on: false, brightness: 100, scene_id: 0, device_name: '' })
+  const state = ref<DeviceState>({
+    product: '', product_id: '', device_name: '',
+    channel_count: 0, channels: [], scene_id: 0
+  })
   const loading = ref(false)
 
   async function fetchState() {
-    /* GET /api/device/state */
+    /* GET /api/device/state → normalizeDeviceState(data) */
   }
-  async function setRelay(on: boolean) {
-    /* POST /api/device/relay */
+  // NEW: per-channel actions
+  async function setChannelState(ch: number, on: boolean) {
+    /* POST /api/device/channel/:ch/state — optimistic update channels[ch].on */
   }
-  async function setBrightness(level: number) {
-    /* POST /api/device/brightness */
+  async function setChannelLevel(ch: number, level: number) {
+    /* POST /api/device/channel/:ch/level — optimistic update channels[ch].brightness */
   }
+  // Legacy compat (delegates to channel 0)
+  async function setRelay(on: boolean) { return setChannelState(0, on) }
+  async function setBrightness(level: number) { return setChannelLevel(0, level) }
 
   // Called by WebSocket when firmware pushes update
   function applyServerUpdate(update: Partial<DeviceState>) {
-    Object.assign(state.value, update)
+    state.value = normalizeDeviceState({ ...state.value, ...update })
   }
+  function applyChannelUpdate(ch: Channel) { /* update single channel in channels[] */ }
 
-  return { state, loading, fetchState, setRelay, setBrightness, applyServerUpdate }
+  return { state, loading, fetchState, setChannelState, setChannelLevel,
+           setRelay, setBrightness, applyServerUpdate, applyChannelUpdate }
 })
 ```
+
+> **Xem chi tiết:** [MESH-DEV-001 §10.3](../../docs/Mesh/Devices.md) — full store code + normalizeDeviceState().
 
 ### 6.2 `meshStore` — Danh sách nodes mesh
 
 ```typescript
 // src/stores/mesh.ts
+// v1.1.0: MeshNode.channels[] — multi-channel per remote node
+
 interface MeshNode {
-  addr: string // "0x0010"
-  name: string // "Living Room"
-  online: boolean
-  relay_on: boolean
-  brightness: number
+  addr: string       // "0x0010"
+  name: string       // "Living Room"
+  product_id: string // "SW2G" — identifies product variant
+  status: NodeOnlineStatus
+  channel_count: number
+  channels: NodeChannel[]  // ← NEW: per-node channel list
   rssi: number | null
+  last_seen_ms: number
+  // Legacy compat: relay_on, brightness (maps to channels[0])
 }
 
 export const useMeshStore = defineStore('mesh', () => {
   const nodes = ref<Map<string, MeshNode>>(new Map())
 
   async function fetchNodes() {
-    /* GET /api/mesh/nodes */
+    /* GET /api/mesh/nodes — normalize each node to ensure channels[] exists */
   }
+  // NEW: per-node per-channel actions
+  async function toggleNodeChannel(addr: string, ch: number, state: boolean) {
+    /* POST /api/mesh/node/:addr/channel/:ch/state — optimistic */
+  }
+  async function setNodeChannelBrightness(addr: string, ch: number, level: number) {
+    /* POST /api/mesh/node/:addr/channel/:ch/level */
+  }
+  // Legacy compat
   async function toggleNode(addr: string, state: boolean) {
-    /* POST /api/mesh/node/:addr/relay */
+    return toggleNodeChannel(addr, 0, state)
   }
   async function renameNode(addr: string, name: string) {
     /* POST /api/mesh/node/:addr/name */
   }
 
   function updateNode(node: Partial<MeshNode> & { addr: string }) {
+    // Normalize: ensure channels[] exists (backward compat with legacy firmware)
     const existing = nodes.value.get(node.addr)
     nodes.value.set(node.addr, { ...existing, ...node } as MeshNode)
   }
   function markOffline(addr: string) {
-    /* update online = false */
+    /* update status = 'offline' */
   }
 
   return {
     nodes,
     nodesArray: computed(() => [...nodes.value.values()]),
     fetchNodes,
-    toggleNode,
+    toggleNode, toggleNodeChannel,
+    setNodeChannelBrightness,
     renameNode,
     updateNode,
     markOffline,
   }
 })
 ```
+
+> **Xem chi tiết:** [MESH-DEV-001 §10.3](../../docs/Mesh/Devices.md) — full store code + node normalization.
 
 ### 6.3 `systemStore` — Info hệ thống + WiFi
 
@@ -607,6 +692,17 @@ export const useWsStore = defineStore('ws', () => {
         break
       case 'NODE_UPDATE':
         meshStore.updateNode(msg.payload)
+        break
+      case 'CHANNEL_UPDATE':                          // ← NEW (v1.1.0)
+        if (msg.payload.source === 'local')
+          deviceStore.applyChannelUpdate(msg.payload.channel)
+        else if (msg.payload.addr) {
+          const node = meshStore.nodes.get(msg.payload.addr)
+          if (node?.channels) {
+            const idx = node.channels.findIndex(c => c.index === msg.payload.channel.index)
+            if (idx >= 0) node.channels[idx] = { ...node.channels[idx], ...msg.payload.channel }
+          }
+        }
         break
       case 'NODE_OFFLINE':
         meshStore.markOffline(msg.payload.addr)
@@ -885,7 +981,27 @@ const WS = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`
 - [ ] Bundle size optimization cho flash (< 500KB gzipped)
 - [ ] PWA manifest (icon, theme color) cho "Add to Home Screen"
 
+### Phase 5 — Multi-Channel Device Support (v1.1.0)
+
+> **Ref:** Full design → [MESH-DEV-001 §10](../../docs/Mesh/Devices.md#10-webui--multi-channel-ui-local-device--remote-mesh-nodes)
+
+- [ ] **Types:** `Channel` type (`{ index, type, name, on, brightness }`) in `device.ts`
+- [ ] **Types:** `NodeChannel` type (+ `element_addr`) in `mesh.ts` — `MeshNode.channels[]`
+- [ ] **Types:** `SceneChannelSnapshot` + `SceneTarget.channels[]` in `scene.ts`
+- [ ] **Types:** `CHANNEL_UPDATE` WS event in `ws.ts`
+- [ ] **Component:** `ChannelCard.vue` — reusable, renders adaptive controls per `channel.type`
+- [ ] **Store:** `deviceStore` — `setChannelState(ch, on)`, `setChannelLevel(ch, level)`, `normalizeDeviceState()`
+- [ ] **Store:** `meshStore` — `toggleNodeChannel(addr, ch, state)`, `setNodeChannelBrightness()`, normalize nodes
+- [ ] **API:** `/api/device/channel/:ch/state`, `/api/device/channel/:ch/level`
+- [ ] **API:** `/api/mesh/node/:addr/channel/:ch/state`, `/api/mesh/node/:addr/channel/:ch/level`
+- [ ] **Dashboard:** Replace single relay card with N ChannelCards loop
+- [ ] **MeshView:** Each node card renders N ChannelCards from `node.channels[]`
+- [ ] **ScenesView:** Create scene snapshots per-channel per-node (including local device)
+- [ ] **WebSocket:** Handle `CHANNEL_UPDATE` event for fine-grained channel push
+- [ ] **Backward compat:** `normalizeDeviceState()` / `normalizeNode()` convert legacy flat data → `channels[0]`
+
 ---
 
-_Document: WEBUI-ARCH-001 v1.0.0 — RhoPhi Smart Home WebUI_  
-_Xem thêm: [Data Management](../../RhoPhi_Smart_Home_ESP32_FW/docs/Implement/Data_Management.md) | [Firmware Architecture](../../RhoPhi_Smart_Home_ESP32_FW/docs/Implement/Software_Architecture.md)_
+_Document: WEBUI-ARCH-001 v1.1.1 — RhoPhi Smart Home WebUI_
+_Changelog: v1.0.0 initial, **v1.1.0** multi-channel — updated §4 wireframes (Dashboard/Mesh/Scenes), §5 API endpoints, §6 stores (deviceStore/meshStore multi-channel), §5.3 WS events (CHANNEL\_UPDATE), §10 Roadmap Phase 5, **v1.1.1** added Phase Roadmap Context note (WebUI temporary for Phase 2, MQTT gateway Phase 3)_
+_Xem thêm: [Data Management](../../RhoPhi_Smart_Home_ESP32_FW/docs/Implement/Data_Management.md) | [Firmware Architecture](../../RhoPhi_Smart_Home_ESP32_FW/docs/Implement/Software_Architecture.md) | [Devices.md §10](../../docs/Mesh/Devices.md)_
