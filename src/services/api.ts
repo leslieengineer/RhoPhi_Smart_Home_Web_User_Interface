@@ -18,28 +18,50 @@ export const api = {
   getDiagNvs: () =>
     request<{ entries: import('@/types/system').NvsEntry[] }>('/api/diagnostics/nvs'),
 
-  // Device
+  // Device — multi-channel (v1.5.0)
   getDeviceState: () => request<import('@/types/device').DeviceState>('/api/device/state'),
-  setRelay: (state: boolean) =>
-    request<{ relay_on: boolean }>('/api/device/relay', {
+  setChannelState: (ch: number, on: boolean) =>
+    request<{ ok: boolean }>(`/api/device/channel/${ch}/state`, {
       method: 'POST',
-      body: JSON.stringify({ state }),
+      body: JSON.stringify({ on }),
+    }),
+  setChannelLevel: (ch: number, level: number) =>
+    request<{ ok: boolean }>(`/api/device/channel/${ch}/level`, {
+      method: 'POST',
+      body: JSON.stringify({ level }),
+    }),
+  // Legacy single-relay compat
+  setRelay: (state: boolean) =>
+    request<{ ok: boolean }>('/api/device/channel/0/state', {
+      method: 'POST',
+      body: JSON.stringify({ on: state }),
     }),
   setBrightness: (level: number) =>
-    request<{ brightness: number }>('/api/device/brightness', {
+    request<{ ok: boolean }>('/api/device/channel/0/level', {
       method: 'POST',
       body: JSON.stringify({ level }),
     }),
 
-  // Mesh
+  // Mesh — multi-channel (v1.5.0)
   getMeshNodes: () => request<import('@/types/mesh').MeshNetwork>('/api/mesh/nodes'),
-  setNodeRelay: (addr: string, state: boolean) =>
-    request<{ addr: string; relay_on: boolean }>(`/api/mesh/node/${addr}/relay`, {
+  setNodeChannelState: (addr: string, ch: number, on: boolean) =>
+    request<{ ok: boolean }>(`/api/mesh/node/${addr}/channel/${ch}/state`, {
       method: 'POST',
-      body: JSON.stringify({ state }),
+      body: JSON.stringify({ on }),
+    }),
+  setNodeChannelLevel: (addr: string, ch: number, level: number) =>
+    request<{ ok: boolean }>(`/api/mesh/node/${addr}/channel/${ch}/level`, {
+      method: 'POST',
+      body: JSON.stringify({ level }),
+    }),
+  // Legacy single-relay compat
+  setNodeRelay: (addr: string, state: boolean) =>
+    request<{ ok: boolean }>(`/api/mesh/node/${addr}/channel/0/state`, {
+      method: 'POST',
+      body: JSON.stringify({ on: state }),
     }),
   setNodeBrightness: (addr: string, level: number) =>
-    request<{ addr: string; brightness: number }>(`/api/mesh/node/${addr}/brightness`, {
+    request<{ ok: boolean }>(`/api/mesh/node/${addr}/channel/0/level`, {
       method: 'POST',
       body: JSON.stringify({ level }),
     }),
@@ -51,12 +73,16 @@ export const api = {
   removeNode: (addr: string) =>
     request<{ removed: boolean }>(`/api/mesh/node/${addr}`, { method: 'DELETE' }),
 
-  // Scenes
+  // Scenes — per-channel (v1.5.0)
   getScenes: () => request<{ scenes: import('@/types/scene').Scene[] }>('/api/scenes'),
-  createScene: (name: string, targets: import('@/types/scene').SceneTarget[] = []) =>
+  createScene: (
+    name: string,
+    targets: import('@/types/scene').SceneTarget[] = [],
+    local_channels?: import('@/types/scene').SceneLocalSnapshot,
+  ) =>
     request<import('@/types/scene').Scene>('/api/scenes', {
       method: 'POST',
-      body: JSON.stringify({ name, targets }),
+      body: JSON.stringify({ name, targets, local_channels }),
     }),
   activateScene: (id: number) =>
     request<{ activated: boolean }>(`/api/scenes/${id}/activate`, { method: 'POST' }),

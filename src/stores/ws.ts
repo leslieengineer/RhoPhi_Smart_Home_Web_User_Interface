@@ -4,6 +4,7 @@ import { wsService } from '@/services/websocket'
 import { useDeviceStore } from './device'
 import { useMeshStore } from './mesh'
 import { useSystemStore } from './system'
+import type { NodeChannel } from '@/types/mesh'
 
 export const useWsStore = defineStore('ws', () => {
   const connected = ref(false)
@@ -25,6 +26,13 @@ export const useWsStore = defineStore('ws', () => {
           break
         case 'NODE_UPDATE':
           mesh.updateNode(msg.payload)
+          break
+        case 'CHANNEL_UPDATE':
+          if (msg.payload.source === 'local') {
+            device.updateChannel(msg.payload.channel)
+          } else if (msg.payload.source === 'mesh' && msg.payload.addr) {
+            mesh.updateNodeChannel(msg.payload.addr, msg.payload.channel as NodeChannel)
+          }
           break
         case 'NODE_OFFLINE':
           mesh.markOffline(msg.payload.addr, msg.payload.last_seen_ms)

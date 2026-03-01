@@ -1,4 +1,4 @@
-import type { DeviceState } from './device'
+import type { Channel, DeviceState } from './device'
 import type { MeshNode } from './mesh'
 import type { WifiStatus } from './wifi'
 import type { LogEntry, TaskInfo } from './system'
@@ -6,6 +6,14 @@ import type { LogEntry, TaskInfo } from './system'
 export type FirmwareEvent =
   | { type: 'STATE_UPDATE'; payload: DeviceState }
   | { type: 'NODE_UPDATE'; payload: MeshNode }
+  | {
+      type: 'CHANNEL_UPDATE'
+      payload: {
+        source: 'local' | 'mesh'
+        addr?: string
+        channel: Channel
+      }
+    }
   | { type: 'NODE_OFFLINE'; payload: { addr: string; last_seen_ms: number } }
   | { type: 'WIFI_STATUS'; payload: WifiStatus }
   | { type: 'LOG'; payload: LogEntry }

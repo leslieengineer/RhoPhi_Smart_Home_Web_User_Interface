@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api } from '@/services/api'
-import type { Scene, SceneTarget } from '@/types/scene'
+import type { Scene, SceneTarget, SceneLocalSnapshot } from '@/types/scene'
 
 export const useScenesStore = defineStore('scenes', () => {
   const scenes = ref<Scene[]>([])
@@ -18,8 +18,12 @@ export const useScenesStore = defineStore('scenes', () => {
     }
   }
 
-  async function createScene(name: string, targets: SceneTarget[] = []) {
-    const scene = await api.createScene(name, targets)
+  async function createScene(
+    name: string,
+    targets: SceneTarget[] = [],
+    local_channels?: SceneLocalSnapshot,
+  ) {
+    const scene = await api.createScene(name, targets, local_channels)
     scenes.value.push(scene)
     return scene
   }
