@@ -5,9 +5,9 @@
 | Field        | Value                                                 |
 | ------------ | ----------------------------------------------------- |
 | Document ID  | WEBUI-ARCH-001                                        |
-| Version      | 1.1.1                                                 |
+| Version      | 1.2.0                                                 |
 | Status       | Active                                                |
-| Last Updated | 2026-02-28                                            |
+| Last Updated | 2026-03-01                                            |
 | Tech Stack   | Vue 3 + TypeScript + Vite + Pinia + Vue Router        |
 | Target Host  | ESP32 AP (192.168.4.1) — embedded via LittleFS/SPIFFS |
 | Relates to   | IMPL-ARCH-001, IMPL-DATA-001, SRS-RHOPHI-001          |
@@ -1000,8 +1000,30 @@ const WS = import.meta.env.VITE_WS_URL || `ws://${window.location.host}/ws`
 - [ ] **WebSocket:** Handle `CHANNEL_UPDATE` event for fine-grained channel push
 - [ ] **Backward compat:** `normalizeDeviceState()` / `normalizeNode()` convert legacy flat data → `channels[0]`
 
+### Phase 6 — WiFi + BLE Mesh Coexistence Runtime (v1.2.0) ✅
+
+> **Ref:** [KAN-30 #06](../../docs/logwork/KAN-30%20%2306.md) | [WiFi BLE Mesh Coexistence Analysis](../../docs/Mesh/WiFi_BLE_Mesh_Coexistence_Analysis.md)
+
+**Firmware milestones đã đạt (ảnh hưởng tới WebUI):**
+
+- [x] **BLE Mesh hoạt động** — provisioner discovers + provisions nodes, heartbeat mỗi 10s
+- [x] **WiFi SoftAP + BLE Mesh chạy song song** — WebUI accessible khi mesh active
+- [x] **Scan duty reduced** — 100% → 19% (normal) / 40% (provisioning) → SoftAP stable
+- [x] **Mesh node status** — `DashboardView` hiển thị `online/offline` node count từ `GET /api/mesh/nodes`
+- [x] **Build pipeline xác nhận** — `npm run build` thành công, 60 modules, bundle < 200KB gzipped
+
+**WebUI changes trong v1.2.0:**
+
+- [x] `DashboardView.vue` — BLE Mesh status card: hiển thị `onlineCount/nodeCount`, gateway addr
+- [x] `MeshView.vue` — Node list với filter (all/online/offline), search, detail drawer, rename, remove
+- [x] `stores/mesh.ts` — `fetchNodes()`, `toggleNode()`, `renameNode()`, `removeNode()`
+- [x] `services/api.ts` — Full API client: System, Device, Mesh, Scenes, WiFi, Settings
+- [x] `services/websocket.ts` — Auto-reconnect WebSocket service với typed events
+- [x] `router/index.ts` — 5 routes: Dashboard, Mesh, Scenes, Settings, Diagnostics
+- [x] **Version bump** — `package.json` `1.2.0`, firmware `app_defs.hpp` `1.2.0`
+
 ---
 
-_Document: WEBUI-ARCH-001 v1.1.1 — RhoPhi Smart Home WebUI_
-_Changelog: v1.0.0 initial, **v1.1.0** multi-channel — updated §4 wireframes (Dashboard/Mesh/Scenes), §5 API endpoints, §6 stores (deviceStore/meshStore multi-channel), §5.3 WS events (CHANNEL\_UPDATE), §10 Roadmap Phase 5, **v1.1.1** added Phase Roadmap Context note (WebUI temporary for Phase 2, MQTT gateway Phase 3)_
+_Document: WEBUI-ARCH-001 v1.2.0 — RhoPhi Smart Home WebUI_
+_Changelog: v1.0.0 initial, **v1.1.0** multi-channel — updated §4 wireframes (Dashboard/Mesh/Scenes), §5 API endpoints, §6 stores (deviceStore/meshStore multi-channel), §5.3 WS events (CHANNEL\_UPDATE), §10 Roadmap Phase 5, **v1.1.1** added Phase Roadmap Context note (WebUI temporary for Phase 2, MQTT gateway Phase 3), **v1.2.0** WiFi+BLE Mesh coexistence milestone — BLE Mesh operational + SoftAP stable, WebUI build verified, Phase 6 roadmap added (KAN-30 #06)_
 _Xem thêm: [Data Management](../../RhoPhi_Smart_Home_ESP32_FW/docs/Implement/Data_Management.md) | [Firmware Architecture](../../RhoPhi_Smart_Home_ESP32_FW/docs/Implement/Software_Architecture.md) | [Devices.md §10](../../docs/Mesh/Devices.md)_

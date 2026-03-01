@@ -5,9 +5,9 @@
 | Field        | Value                                        |
 | ------------ | -------------------------------------------- |
 | Document ID  | WEBUI-IMPL-001                               |
-| Version      | 1.5.0                                        |
+| Version      | 1.6.0                                        |
 | Status       | Active                                       |
-| Last Updated | 2026-02-28                                   |
+| Last Updated | 2026-03-01                                   |
 | Relates to   | WEBUI-ARCH-001, WEBUI-DATA-001               |
 | WebUI Repo   | `/home/leslie/WS/rhophismarthomeWebUI`       |
 | FW Repo      | `/home/leslie/WS/RhoPhi_Smart_Home_ESP32_FW` |
@@ -1246,3 +1246,87 @@ python $IDF_PATH/components/spiffs/spiffsgen.py \
 | API trả về đúng nhưng UI không cập nhật   | WS push chưa implement                  | Đây là TODO — tạm thời reload trang                                                                                |
 | `curl` trả về `Connection refused`        | Server chưa start                       | Xem log `WS_MGR: WebServer started on port 80` — nếu không có là init fail                                         |
 | Flash xong nhưng WebUI cũ                 | SPIFFS không được flash                 | Dùng `idf.py flash` (không phải chỉ `app-flash`) — SPIFFS được include khi có `FLASH_IN_PROJECT`                   |
+| Phone kết nối WiFi AP nhưng không vào được WebUI | BLE Mesh scan 100% duty → SoftAP DHCP bị block | Đây là root cause của issue WiFi+BLE. Fixed từ v1.2.0: scan duty giảm xuống 19% via `esp_ble_mesh_scan_params_update()` |
+
+---
+
+## 15. Changelog
+
+### v1.2.0 (2026-03-01) — BLE Mesh Milestone
+
+**Firmware v1.2.0 đã đạt được:**
+
+> Đây là milestone quan trọng: BLE Mesh hoạt động ổn định và WiFi SoftAP accessible đồng thời.
+
+#### Vấn đề đã giải quyết
+
+| Vấn đề | Nguyên nhân | Fix |
+|--------|-------------|-----|
+| WiFi SoftAP mất kết nối khi BLE Mesh bật | BLE scan 100% duty cycle (`SCAN_INTERVAL=SCAN_WINDOW=0x20` hardcoded) → không còn RF slot cho WiFi | `esp_ble_mesh_scan_params_update()` giảm xuống 19% (normal) / 40% (provisioning) |
+| Crash `MEPC=0x00000000` sau mesh init | `profile_tab[BTC_PID_BLE_MESH_BLE_COEX]` = NULL vì `CONFIG_BLE_MESH_SUPPORT_BLE_SCAN` chưa set | Thêm `CONFIG_BLE_MESH_SUPPORT_BLE_SCAN=y` vào `sdkconfig.defaults` |
+| LED/relay không toggle trên node | `CMD_MESH_STATE_UPDATE` chỉ update MeshNodeDB, không gọi `DeviceManager::setChannelState()` | Thêm `setChannelState()` call trong handler khi `addr == ownAddr` |
+| Deprecated API gây warning | `esp_coex_preference_set()` đã deprecated trong ESP-IDF 5.x | Thay bằng `esp_coex_status_bit_set/clear()` với `MESH_CONFIG/STANDBY` hints |
+
+#### Thay đổi Firmware (ảnh hưởng tới WebUI runtime)
+
+```
+application/include/app_defs.hpp  — VERSION: 1.0.0 → 1.2.0
+sdkconfig.defaults                — Thêm BLE_MESH_SUPPORT_BLE_SCAN=y
+sdkconfig.defaults.esp32c6        — BT_NIMBLE_50_FEATURE_SUPPORT=n (giảm overhead)
+ble_mesh_manager.cpp              — Scan duty reduction + coex status hints
+app_run.cpp                       — LED GPIO fix + notifyProvisioned() call
+wifi_run.cpp                      — Xóa deprecated esp_coex_preference_set()
+```
+
+#### Thay đổi WebUI
+
+```
+web_src/package.json              — version: 0.0.0 → 1.2.0
+```
+
+#### Build output đã xác nhận
+
+```
+> rhophismarthomewebui@1.2.0 build
+> run-p type-check "build-only {@}" --
+
+vite v7.3.1 building client environment for production...
+✓ 60 modules transformed.
+dist/index.html             0.42 kB │ gzip:  0.28 kB
+dist/assets/CX4MGlJz.css   27.52 kB │ gzip:  5.66 kB
+dist/assets/D_FzhMDT.js   120.97 kB │ gzip: 46.63 kB
+✓ built in 4.21s
+```
+
+#### Trạng thái các tính năng
+
+| Tính năng | Trạng thái | Ghi chú |
+|-----------|-----------|---------|
+| Dashboard — WiFi status card | ✅ Working | Hiển thị connected/disconnected, SSID, RSSI |
+| Dashboard — BLE Mesh status card | ✅ Working | onlineCount/nodeCount, gateway addr |
+| Dashboard — Relay toggle (local) | ✅ Working | Optimistic UI + rollback |
+| Dashboard — Brightness slider | ✅ Working | Debounced API call |
+| Mesh — Node list | ✅ Working | Fetch từ `GET /api/mesh/nodes` |
+| Mesh — Filter (all/online/offline) | ✅ Working | Client-side filter |
+| Mesh — Search | ✅ Working | By name hoặc addr |
+| Mesh — Detail drawer | ✅ Working | Rename, remove node |
+| Mesh — Toggle node relay | ✅ Working | `POST /api/mesh/node/:addr/relay` |
+| WebSocket auto-reconnect | ✅ Working | 3s delay, typed events |
+| 5-route navigation | ✅ Working | Dashboard/Mesh/Scenes/Settings/Diagnostics |
+| Scenes CRUD | ⏳ UI scaffold | API client ready, view cần hoàn thiện |
+| Settings — WiFi scan & connect | ⏳ UI scaffold | API client ready |
+| Diagnostics — Task table | ⏳ UI scaffold | API client ready |
+
+#### Lưu ý về performance (WiFi + BLE Mesh trade-off)
+
+```
+Hardware: ESP32-C6 single antenna → TDM sharing
+BLE scan duty: 19% normal / 40% provisioning
+→ WiFi SoftAP: ổn định, DHCP hoạt động, HTTP accessible
+→ BLE Mesh response latency: cao hơn ~5× so với standalone BLE
+→ Trade-off chấp nhận được cho Phase 2 (local control)
+```
+
+---
+
+_Document: WEBUI-IMPL-001 v1.6.0 — RhoPhi Smart Home WebUI Implementation Guide_
