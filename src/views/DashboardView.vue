@@ -3,8 +3,8 @@ import { onMounted } from 'vue'
 import { useDeviceStore } from '@/stores/device'
 import { useMeshStore } from '@/stores/mesh'
 import { useSystemStore } from '@/stores/system'
+import ChannelCard from '@/components/common/ChannelCard.vue'
 import RelayToggle from '@/components/common/RelayToggle.vue'
-import BrightnessSlider from '@/components/common/BrightnessSlider.vue'
 
 const device = useDeviceStore()
 const mesh = useMeshStore()
@@ -57,26 +57,30 @@ function lastSeenLabel(ms: number): string {
       </div>
     </div>
 
-    <!-- This device -->
+    <!-- This device — multi-channel -->
     <div class="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 space-y-3">
-      <div class="text-xs text-zinc-500 font-semibold uppercase tracking-wider">This Device</div>
       <div class="flex items-center justify-between">
         <div>
-          <div class="text-sm font-semibold text-zinc-100">Relay</div>
-          <div :class="device.state.relay_on ? 'text-green-400' : 'text-zinc-500'" class="text-xs">
-            {{ device.state.relay_on ? 'ON' : 'OFF' }}
+          <div class="text-xs text-zinc-500 font-semibold uppercase tracking-wider">
+            This Device
+          </div>
+          <div class="text-[10px] text-zinc-600 mt-0.5">
+            {{ device.state.product }} · {{ device.state.channel_count }}ch
           </div>
         </div>
-        <RelayToggle
-          :model-value="device.state.relay_on"
-          @update:model-value="device.setRelay($event)"
-        />
+        <div v-if="device.state.device_name" class="text-xs text-zinc-400 truncate max-w-[140px]">
+          {{ device.state.device_name }}
+        </div>
       </div>
-      <div class="space-y-1.5">
-        <div class="text-sm font-medium text-zinc-100">Brightness</div>
-        <BrightnessSlider
-          :model-value="device.state.brightness"
-          @update:model-value="device.setBrightness($event)"
+
+      <!-- Render N ChannelCards dynamically -->
+      <div class="space-y-2">
+        <ChannelCard
+          v-for="ch in device.state.channels"
+          :key="ch.index"
+          :channel="ch"
+          @toggle="(idx, on) => device.setChannelState(idx, on)"
+          @level="(idx, val) => device.setChannelLevel(idx, val)"
         />
       </div>
     </div>
@@ -105,16 +109,20 @@ function lastSeenLabel(ms: number): string {
           />
           <div class="flex-1 min-w-0">
             <div class="text-sm text-zinc-200 truncate">{{ node.name || node.addr }}</div>
-            <div v-if="node.status === 'offline'" class="text-xs text-zinc-500">
-              {{ lastSeenLabel(node.last_seen_ms) }}
+            <div class="text-[10px] text-zinc-500">
+              {{ node.product_id || node.model_type }} · {{ node.channel_count }}ch
+              <template v-if="node.status === 'offline'">
+                · {{ lastSeenLabel(node.last_seen_ms) }}
+              </template>
             </div>
           </div>
+          <!-- Quick toggle for first channel -->
           <RelayToggle
-            v-if="node.status === 'online'"
-            :model-value="node.relay_on"
-            @update:model-value="mesh.toggleNode(node.addr, $event)"
+            v-if="node.status === 'online' && node.channels?.length > 0"
+            :model-value="node.channels[0]?.on ?? false"
+            @update:model-value="mesh.toggleNodeChannel(node.addr, 0, $event)"
           />
-          <span v-else class="text-xs text-zinc-600 bg-zinc-800 px-2 py-0.5 rounded-full"
+          <span v-else-if="node.status !== 'online'" class="text-xs text-zinc-600 bg-zinc-800 px-2 py-0.5 rounded-full"
             >Offline</span
           >
         </div>

@@ -2,29 +2,66 @@
 import { ref, onMounted } from 'vue'
 import { useScenesStore } from '@/stores/scenes'
 import { useMeshStore } from '@/stores/mesh'
-import type { SceneTarget } from '@/types/scene'
+import { useDeviceStore } from '@/stores/device'
+import type { SceneTarget, SceneChannelSnapshot, SceneLocalSnapshot } from '@/types/scene'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useToast } from '@/composables/useToast'
 
 const scenes = useScenesStore()
 const mesh = useMeshStore()
+const device = useDeviceStore()
 const toast = useToast()
 
 onMounted(() => {
   scenes.fetchScenes()
   mesh.fetchNodes()
+  device.fetchState()
 })
 
-// Create scene modal
+// --- Create scene modal ---
 const showCreate = ref(false)
 const newName = ref('')
-const targets = ref<SceneTarget[]>([])
+
+// Local channels snapshot for create modal
+interface LocalChEdit {
+  index: number
+  name: string
+  on: boolean
+  level: number
+}
+
+// Remote targets snapshot for create modal
+interface TargetEdit {
+  addr: string
+  nodeName: string
+  channels: LocalChEdit[]
+}
+
+const localChannels = ref<LocalChEdit[]>([])
+const targets = ref<TargetEdit[]>([])
 
 function openCreate() {
   newName.value = ''
+  // Populate local channels from current device state
+  localChannels.value = device.state.channels.map((ch) => ({
+    index: ch.index,
+    name: ch.name,
+    on: ch.on,
+    level: ch.level,
+  }))
+  // Populate mesh targets from online nodes
   targets.value = mesh.nodesArray
     .filter((n) => n.status === 'online')
-    .map((n) => ({ addr: n.addr, relay_on: n.relay_on, brightness: n.brightness }))
+    .map((n) => ({
+      addr: n.addr,
+      nodeName: n.name || n.addr,
+      channels: n.channels.map((ch) => ({
+        index: ch.index,
+        name: ch.name,
+        on: ch.on,
+        level: ch.level,
+      })),
+    }))
   showCreate.value = true
 }
 
@@ -34,7 +71,26 @@ async function submitCreate() {
     return
   }
   try {
-    await scenes.createScene(newName.value.trim(), targets.value)
+    const sceneTargets: SceneTarget[] = targets.value.map((t) => ({
+      addr: t.addr,
+      channels: t.channels.map(
+        (ch): SceneChannelSnapshot => ({
+          index: ch.index,
+          on: ch.on,
+          level: ch.level,
+        }),
+      ),
+    }))
+    const local_channels: SceneLocalSnapshot = {
+      channels: localChannels.value.map(
+        (ch): SceneChannelSnapshot => ({
+          index: ch.index,
+          on: ch.on,
+          level: ch.level,
+        }),
+      ),
+    }
+    await scenes.createScene(newName.value.trim(), sceneTargets, local_channels)
     showCreate.value = false
     toast.success('Scene created')
   } catch {
@@ -42,7 +98,7 @@ async function submitCreate() {
   }
 }
 
-// Delete confirm
+// --- Delete confirm ---
 const deleteId = ref<number | null>(null)
 
 async function confirmDelete() {
@@ -61,10 +117,20 @@ async function activate(id: number) {
   }
 }
 
-function targetSummary(tgts: SceneTarget[]) {
-  if (!tgts.length) return 'No targets'
-  const on = tgts.filter((t) => t.relay_on).length
-  return `${tgts.length} node${tgts.length > 1 ? 's' : ''} · ${on} on`
+function targetSummary(scene: import('@/types/scene').Scene) {
+  const parts: string[] = []
+  if (scene.local_channels?.channels?.length) {
+    const on = scene.local_channels.channels.filter((c) => c.on).length
+    parts.push(`Local: ${on}/${scene.local_channels.channels.length} on`)
+  }
+  if (scene.targets.length) {
+    parts.push(`${scene.targets.length} node${scene.targets.length > 1 ? 's' : ''}`)
+  }
+  return parts.join(' · ') || 'No targets'
+}
+
+function channelChipLabel(ch: SceneChannelSnapshot): string {
+  return ch.on ? `Ch${ch.index} ON ${ch.level}%` : `Ch${ch.index} OFF`
 }
 </script>
 
@@ -74,7 +140,7 @@ function targetSummary(tgts: SceneTarget[]) {
     <div class="flex items-center justify-between">
       <div>
         <h2 class="text-sm font-semibold text-zinc-100">Scenes</h2>
-        <p class="text-xs text-zinc-500">Automate your mesh nodes</p>
+        <p class="text-xs text-zinc-500">Automate your devices</p>
       </div>
       <button
         @click="openCreate"
@@ -95,7 +161,7 @@ function targetSummary(tgts: SceneTarget[]) {
     <div v-else-if="scenes.scenes.length === 0" class="text-center py-16 space-y-3">
       <div class="text-4xl">🎬</div>
       <div class="text-zinc-400 text-sm">No scenes yet</div>
-      <div class="text-zinc-500 text-xs">Create a scene to control multiple nodes at once</div>
+      <div class="text-zinc-500 text-xs">Create a scene to control multiple channels at once</div>
     </div>
 
     <!-- Scene list -->
@@ -108,7 +174,7 @@ function targetSummary(tgts: SceneTarget[]) {
         <div class="flex items-start gap-3">
           <div class="flex-1 min-w-0">
             <div class="text-sm font-semibold text-zinc-100">{{ scene.name }}</div>
-            <div class="text-xs text-zinc-500 mt-0.5">{{ targetSummary(scene.targets) }}</div>
+            <div class="text-xs text-zinc-500 mt-0.5">{{ targetSummary(scene) }}</div>
           </div>
           <button
             @click="deleteId = scene.id"
@@ -118,23 +184,38 @@ function targetSummary(tgts: SceneTarget[]) {
           </button>
         </div>
 
-        <!-- Targets preview -->
-        <div v-if="scene.targets.length" class="flex flex-wrap gap-2">
-          <span
-            v-for="t in scene.targets.slice(0, 4)"
-            :key="t.addr"
-            class="text-xs px-2 py-1 rounded-lg"
-            :class="t.relay_on ? 'bg-green-500/20 text-green-400' : 'bg-zinc-800 text-zinc-500'"
-          >
-            {{ t.addr.slice(-4) }}
-            {{ t.relay_on ? `💡 ${t.brightness}%` : '🔌 off' }}
-          </span>
-          <span
-            v-if="scene.targets.length > 4"
-            class="text-xs px-2 py-1 rounded-lg bg-zinc-800 text-zinc-500"
-          >
-            +{{ scene.targets.length - 4 }} more
-          </span>
+        <!-- Local channels preview -->
+        <div v-if="scene.local_channels?.channels?.length" class="space-y-1">
+          <div class="text-[10px] text-zinc-600 uppercase tracking-wider">This Device</div>
+          <div class="flex flex-wrap gap-1.5">
+            <span
+              v-for="ch in scene.local_channels.channels"
+              :key="'l' + ch.index"
+              class="text-[10px] px-2 py-0.5 rounded-lg"
+              :class="ch.on ? 'bg-green-500/20 text-green-400' : 'bg-zinc-800 text-zinc-500'"
+            >
+              {{ channelChipLabel(ch) }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Remote targets preview -->
+        <div v-if="scene.targets.length" class="space-y-1">
+          <div class="text-[10px] text-zinc-600 uppercase tracking-wider">Mesh Nodes</div>
+          <div v-for="t in scene.targets.slice(0, 3)" :key="t.addr" class="flex flex-wrap gap-1.5 items-center">
+            <span class="text-[10px] text-zinc-500 font-mono">{{ t.addr.slice(-4) }}</span>
+            <span
+              v-for="ch in (t.channels || [])"
+              :key="ch.index"
+              class="text-[10px] px-1.5 py-0.5 rounded-lg"
+              :class="ch.on ? 'bg-green-500/20 text-green-400' : 'bg-zinc-800 text-zinc-500'"
+            >
+              {{ channelChipLabel(ch) }}
+            </span>
+          </div>
+          <div v-if="scene.targets.length > 3" class="text-[10px] text-zinc-500">
+            +{{ scene.targets.length - 3 }} more nodes
+          </div>
         </div>
 
         <button
@@ -175,31 +256,36 @@ function targetSummary(tgts: SceneTarget[]) {
             />
           </div>
 
-          <div v-if="targets.length > 0">
-            <div class="text-xs text-zinc-500 font-medium mb-2">Node States</div>
-            <div class="space-y-3">
-              <div v-for="t in targets" :key="t.addr" class="bg-zinc-800 rounded-xl p-3 space-y-2">
+          <!-- Local device channels -->
+          <div v-if="localChannels.length > 0">
+            <div class="text-xs text-zinc-500 font-medium mb-2">This Device</div>
+            <div class="space-y-2">
+              <div
+                v-for="ch in localChannels"
+                :key="'lc' + ch.index"
+                class="bg-zinc-800 rounded-xl p-3 space-y-2"
+              >
                 <div class="flex items-center justify-between">
-                  <span class="text-sm text-zinc-200 font-mono">{{ t.addr.slice(-8) }}</span>
+                  <span class="text-sm text-zinc-200">{{ ch.name || `Ch${ch.index}` }}</span>
                   <div class="flex items-center gap-2">
-                    <span class="text-xs text-zinc-500">{{ t.relay_on ? 'ON' : 'OFF' }}</span>
+                    <span class="text-xs text-zinc-500">{{ ch.on ? 'ON' : 'OFF' }}</span>
                     <button
-                      @click="t.relay_on = !t.relay_on"
-                      :class="t.relay_on ? 'bg-green-500' : 'bg-zinc-600'"
+                      @click="ch.on = !ch.on"
+                      :class="ch.on ? 'bg-green-500' : 'bg-zinc-600'"
                       class="w-10 h-6 rounded-full transition-colors relative"
                     >
                       <span
-                        :class="t.relay_on ? 'translate-x-4' : 'translate-x-0.5'"
+                        :class="ch.on ? 'translate-x-4' : 'translate-x-0.5'"
                         class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform block"
                       />
                     </button>
                   </div>
                 </div>
-                <div v-if="t.relay_on" class="flex items-center gap-2">
-                  <span class="text-xs text-zinc-500 w-16">{{ t.brightness }}%</span>
+                <div v-if="ch.on" class="flex items-center gap-2">
+                  <span class="text-xs text-zinc-500 w-12">{{ ch.level }}%</span>
                   <input
                     type="range"
-                    v-model.number="t.brightness"
+                    v-model.number="ch.level"
                     min="0"
                     max="100"
                     class="flex-1"
@@ -208,7 +294,61 @@ function targetSummary(tgts: SceneTarget[]) {
               </div>
             </div>
           </div>
-          <div v-else class="text-xs text-zinc-500 italic">No online nodes to configure</div>
+
+          <!-- Mesh node targets -->
+          <div v-if="targets.length > 0">
+            <div class="text-xs text-zinc-500 font-medium mb-2">Mesh Nodes</div>
+            <div class="space-y-3">
+              <div
+                v-for="t in targets"
+                :key="t.addr"
+                class="bg-zinc-800 rounded-xl p-3 space-y-2"
+              >
+                <div class="text-sm text-zinc-200 font-medium">
+                  {{ t.nodeName }}
+                  <span class="text-xs text-zinc-500 font-mono ml-1">{{ t.addr.slice(-4) }}</span>
+                </div>
+                <div
+                  v-for="ch in t.channels"
+                  :key="ch.index"
+                  class="bg-zinc-700/50 rounded-lg p-2 space-y-1.5"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-zinc-300">{{ ch.name || `Ch${ch.index}` }}</span>
+                    <div class="flex items-center gap-2">
+                      <span class="text-[10px] text-zinc-500">{{ ch.on ? 'ON' : 'OFF' }}</span>
+                      <button
+                        @click="ch.on = !ch.on"
+                        :class="ch.on ? 'bg-green-500' : 'bg-zinc-600'"
+                        class="w-8 h-5 rounded-full transition-colors relative"
+                      >
+                        <span
+                          :class="ch.on ? 'translate-x-3' : 'translate-x-0.5'"
+                          class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform block"
+                        />
+                      </button>
+                    </div>
+                  </div>
+                  <div v-if="ch.on" class="flex items-center gap-2">
+                    <span class="text-[10px] text-zinc-500 w-10">{{ ch.level }}%</span>
+                    <input
+                      type="range"
+                      v-model.number="ch.level"
+                      min="0"
+                      max="100"
+                      class="flex-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div
+            v-else-if="localChannels.length === 0"
+            class="text-xs text-zinc-500 italic"
+          >
+            No channels to configure
+          </div>
 
           <button
             @click="submitCreate"

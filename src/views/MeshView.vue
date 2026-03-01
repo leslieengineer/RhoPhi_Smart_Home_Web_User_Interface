@@ -2,8 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useMeshStore } from '@/stores/mesh'
 import type { MeshNode } from '@/types/mesh'
-import RelayToggle from '@/components/common/RelayToggle.vue'
-import BrightnessSlider from '@/components/common/BrightnessSlider.vue'
+import ChannelCard from '@/components/common/ChannelCard.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 
 const mesh = useMeshStore()
@@ -119,7 +118,9 @@ function lastSeenLabel(ms: number) {
             <div class="text-sm font-semibold text-zinc-100 truncate">
               {{ node.name || node.addr }}
             </div>
-            <div class="text-xs text-zinc-500">{{ node.addr }} · {{ node.model_type }}</div>
+            <div class="text-xs text-zinc-500">
+              {{ node.addr }} · {{ node.product_id || node.model_type }} · {{ node.channel_count }}ch
+            </div>
           </div>
           <span
             v-if="node.status !== 'online'"
@@ -129,20 +130,15 @@ function lastSeenLabel(ms: number) {
           </span>
         </div>
 
-        <!-- Controls (online only) -->
+        <!-- Per-channel controls (online only) -->
         <template v-if="node.status === 'online'">
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-zinc-400">Relay</span>
-            <RelayToggle
-              :model-value="node.relay_on"
-              @update:model-value="mesh.toggleNode(node.addr, $event)"
-            />
-          </div>
-          <div v-if="node.model_type === 'lightness'" class="space-y-1">
-            <span class="text-xs text-zinc-400">Brightness</span>
-            <BrightnessSlider
-              :model-value="node.brightness"
-              @update:model-value="mesh.setNodeBrightness(node.addr, $event)"
+          <div class="space-y-2">
+            <ChannelCard
+              v-for="ch in node.channels"
+              :key="ch.index"
+              :channel="ch"
+              @toggle="(idx, on) => mesh.toggleNodeChannel(node.addr, idx, on)"
+              @level="(idx, val) => mesh.setNodeChannelLevel(node.addr, idx, val)"
             />
           </div>
           <div v-if="node.rssi !== null" class="flex items-center gap-2">
@@ -201,8 +197,12 @@ function lastSeenLabel(ms: number) {
                 <div class="text-zinc-200 font-mono">{{ selectedNode.addr }}</div>
               </div>
               <div class="bg-zinc-800 rounded-xl p-3">
-                <div class="text-xs text-zinc-500 mb-1">Model</div>
-                <div class="text-zinc-200 capitalize">{{ selectedNode.model_type }}</div>
+                <div class="text-xs text-zinc-500 mb-1">Product</div>
+                <div class="text-zinc-200">{{ selectedNode.product_id || selectedNode.model_type }}</div>
+              </div>
+              <div class="bg-zinc-800 rounded-xl p-3">
+                <div class="text-xs text-zinc-500 mb-1">Channels</div>
+                <div class="text-zinc-200">{{ selectedNode.channel_count }}</div>
               </div>
               <div class="bg-zinc-800 rounded-xl p-3">
                 <div class="text-xs text-zinc-500 mb-1">Status</div>
