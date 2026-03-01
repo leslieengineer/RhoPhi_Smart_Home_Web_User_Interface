@@ -5,9 +5,9 @@
 | Field        | Value                                        |
 | ------------ | -------------------------------------------- |
 | Document ID  | WEBUI-DATA-001                               |
-| Version      | 1.1.0                                        |
+| Version      | 1.2.0                                        |
 | Status       | Active                                       |
-| Last Updated | 2026-02-28                                   |
+| Last Updated | 2026-03-01                                   |
 | Relates to   | WEBUI-ARCH-001, IMPL-DATA-001, IMPL-ARCH-001 |
 
 ---
@@ -1237,5 +1237,6 @@ private:
 
 ---
 
-_Document: WEBUI-DATA-001 v1.1.0 — RhoPhi Smart Home WebUI Backend Data Architecture (Multi-Channel)_  
+_Document: WEBUI-DATA-001 v1.2.0 — RhoPhi Smart Home WebUI Backend Data Architecture (Multi-Channel)_  
+_Changelog: v1.0.0 initial schema, **v1.1.0** multi-channel model (Channel[], MeshNode.channels[], SceneChannelSnapshot), **v1.2.0** BLE Mesh milestone — firmware v1.2.0 operational, WiFi+BLE coexistence fix documented, `/api/status` version field reflects 1.2.0_  
 _Xem thêm: [WebUI Architecture](./WebUI_Architecture.md) | [Firmware Data Management](../../RhoPhi_Smart_Home_ESP32_FW/docs/Implement/Data_Management.md)_
